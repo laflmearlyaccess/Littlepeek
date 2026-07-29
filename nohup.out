@@ -1,0 +1,25 @@
+[2026-07-28 15:39:55] [WARNING ] discord.ext.commands.bot: Privileged message content intent is missing, commands may not work as expected.
+[2026-07-28 15:39:55] [INFO    ] discord.client: logging in using static token
+[2026-07-28 15:39:56] [INFO    ] discord.gateway: Shard ID None has connected to Gateway (Session ID: 4b38a10e2ef607e196ed8a53c405f3d7).
+[2026-07-28 19:11:06] [WARNING ] discord.ext.commands.bot: Privileged message content intent is missing, commands may not work as expected.
+[2026-07-28 19:11:06] [INFO    ] discord.client: logging in using static token
+[2026-07-28 19:11:14] [INFO    ] discord.gateway: Shard ID None has connected to Gateway (Session ID: ed86df7208e176fcd297395152e46330).
+[2026-07-28 19:33:37] [INFO    ] discord.gateway: Shard ID None has successfully RESUMED session ed86df7208e176fcd297395152e46330.
+[2026-07-28 21:38:21] [ERROR   ] discord.ui.view: Ignoring exception in view <PanelView timeout=None children=1> for item <Button style=<ButtonStyle.primary: 1> url=None disabled=False label='Recherche' emoji=<PartialEmoji animated=False name='🔍' id=None> row=None sku_id=None id=None>
+Traceback (most recent call last):
+  File "/home/modernslave/Desktop/Littlepeek/myenv/lib/python3.14/site-packages/discord/ui/view.py", line 598, in _scheduled_task
+    await item.callback(interaction)
+  File "/home/modernslave/Desktop/Littlepeek/bot.py", line 141, in recherche_button
+    await interaction.response.send_modal(SearchModal())
+  File "/home/modernslave/Desktop/Littlepeek/myenv/lib/python3.14/site-packages/discord/interactions.py", line 1300, in send_modal
+    response = await adapter.create_interaction_response(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "/home/modernslave/Desktop/Littlepeek/myenv/lib/python3.14/site-packages/discord/webhook/async_.py", line 224, in request
+    raise NotFound(response, data)
+discord.errors.NotFound: 404 Not Found (error code: 10062): Unknown interaction
+[2026-07-28 22:18:38] [INFO    ] discord.gateway: Shard ID None has successfully RESUMED session ed86df7208e176fcd297395152e46330.
+[2026-07-28 23:06:46] [INFO    ] discord.gateway: Shard ID None has successfully RESUMED session ed86df7208e176fcd297395152e46330.
+[2026-07-28 23:08:51] [INFO    ] discord.gateway: Shard ID None has successfully RESUMED session ed86df7208e176fcd297395152e46330.

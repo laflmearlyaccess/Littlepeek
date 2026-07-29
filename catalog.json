@@ -598,5 +598,61 @@
     "genre": "Science-fiction / Aventure / Action",
     "description": "La princesse Leia est capturée et retenue en otage par les forces impériales maléfiques, dans leur tentative de prendre le contrôle de l'Empire galactique.",
     "lien": "https://cinejoy.to/watch/movie/11"
+  },
+  {
+    "titre": "Scream",
+    "type": "Film",
+    "annee": 1996,
+    "genre": "Horreur",
+    "description": "Un an après le meurtre de sa mère, une adolescente est terrorisée par un tueur masqué qui la prend pour cible, elle et ses amis, en utilisant des films d'horreur dans le cadre d'un jeu mortel.",
+    "lien": "https://cinejoy.to/watch/movie/4232"
+  },
+  {
+    "titre": "Scream 2",
+    "type": "Film",
+    "annee": 1997,
+    "genre": "Horreur",
+    "description": "Deux ans après les meurtres de Woodsboro, Sidney Prescott s'adapte à la vie universitaire tandis qu'une personne revêtant le costume de Ghostface entame une nouvelle série de meurtres.",
+    "lien": "https://cinejoy.to/watch/movie/4233"
+  },
+  {
+    "titre": "Scream 3",
+    "type": "Film",
+    "annee": 2000,
+    "genre": "Horreur",
+    "description": "Dans ce troisième film inspiré des horribles meurtres de Woodsboro, Sidney et les autres survivants sont une fois de plus terrorisés par un nouveau tueur Ghostface.",
+    "lien": "https://cinejoy.to/watch/movie/4234"
+  },
+  {
+    "titre": "Scream 4",
+    "type": "Film",
+    "annee": 2011,
+    "genre": "Horreur",
+    "description": "Quinze ans après les meurtres originaux de Woodsboro, Sidney Prescott revient chez elle pour promouvoir son nouveau livre sur la survie au traumatisme, mais un nouveau tueur sous le masque de Ghostface surgit et prend pour cible un nouveau groupe d'adolescents.",
+    "lien": "https://cinejoy.to/watch/movie/41446"
+  },
+  {
+    "titre": "Scream",
+    "type": "Film",
+    "annee": 2022,
+    "genre": "Horreur",
+    "description": "Vingt-cinq ans après qu'une série de meurtres brutaux a secoué la paisible ville de Woodsboro, un nouveau tueur a revêtu le masque de Ghostface et s'en prend à un groupe d'adolescents pour faire ressurgir les secrets du passé sanglant de la ville.",
+    "lien": "https://cinejoy.to/watch/movie/646385"
+  },
+  {
+    "titre": "Scream VI",
+    "type": "Film",
+    "annee": 2023,
+    "genre": "Horreur",
+    "description": "À la suite des derniers meurtres commis par Ghostface, les quatre survivants quittent Woodsboro et entament un nouveau chapitre.",
+    "lien": "https://cinejoy.to/watch/movie/934433"
+  },
+  {
+    "titre": "Scream 7",
+    "type": "Film",
+    "annee": 2026,
+    "genre": "Horreur",
+    "description": "Lorsqu'un nouveau tueur Ghostface surgit dans la ville paisible où Sidney Prescott s'est construit une nouvelle vie, ses pires craintes se concrétisent : sa fille devient la prochaine cible.",
+    "lien": "https://cinejoy.to/watch/movie/1159559"
   }
 ]
