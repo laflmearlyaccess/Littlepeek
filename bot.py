@@ -4,8 +4,10 @@ from discord.ext import commands
 import os
 import json
 import difflib
+import asyncio
 from dotenv import load_dotenv
 from keep_alive import keep_alive
+import justwatch_helper
 
 load_dotenv()
 
@@ -72,59 +74,214 @@ def search_catalog(keyword: str):
     return [item for _, item in fuzzy_matches][:MAX_RESULTS]
 
 
+# --- Étape 4 (séries) : sélection de l'épisode, puis affichage des plateformes ---
+class EpisodeSelect(discord.ui.Select):
+    def __init__(self, episodes: list, show_title: str, season_number):
+        self.episodes = episodes
+        self.show_title = show_title
+        self.season_number = season_number
+        options = [
+            discord.SelectOption(
+                label=f"Épisode {ep.get('episode_number', '?')} — {ep.get('title', 'Sans titre')}"[:100],
+                value=str(ep["id"]),
+            )
+            for ep in episodes[:25]  # limite Discord : 25 options max
+        ]
+        super().__init__(placeholder="Choisis l'épisode...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        episode_id = int(self.values[0])
+        episode = next((e for e in self.episodes if e["id"] == episode_id), None)
+        if episode is None:
+            await interaction.response.edit_message(content="❌ Épisode introuvable.", embed=None, view=None)
+            return
+
+        platforms = justwatch_helper.offers_to_platform_list(episode.get("offers", []))
+        embed = discord.Embed(
+            title=f"{self.show_title} — Saison {self.season_number}, Épisode {episode.get('episode_number', '?')}",
+            description=episode.get("title", ""),
+            color=discord.Color.blurple(),
+        )
+
+        view = discord.ui.View(timeout=180)
+        if not platforms:
+            embed.add_field(name="Disponibilité", value="Aucune plateforme trouvée pour cet épisode en France.")
+        else:
+            for label, url in platforms[:25]:
+                view.add_item(discord.ui.Button(label=f"▶️ {label}", style=discord.ButtonStyle.link, url=url))
+
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class EpisodeSelectView(discord.ui.View):
+    def __init__(self, episodes: list, show_title: str, season_number):
+        super().__init__(timeout=180)
+        self.add_item(EpisodeSelect(episodes, show_title, season_number))
+
+
+# --- Étape 3 (séries) : sélection de la saison ---
+class SeasonSelect(discord.ui.Select):
+    def __init__(self, seasons: list, show_title: str):
+        self.seasons = seasons
+        self.show_title = show_title
+        options = [
+            discord.SelectOption(
+                label=f"Saison {s.get('season_number', '?')}"[:100],
+                value=str(s["id"]),
+            )
+            for s in seasons[:25]
+        ]
+        super().__init__(placeholder="Choisis la saison...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        season_id = int(self.values[0])
+        season = next((s for s in self.seasons if s["id"] == season_id), None)
+        if season is None:
+            await interaction.response.edit_message(content="❌ Saison introuvable.", embed=None, view=None)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        try:
+            episodes = await asyncio.get_event_loop().run_in_executor(
+                None, justwatch_helper.get_season_episodes, season_id
+            )
+        except Exception as e:
+            print(f"Erreur récupération des épisodes JustWatch : {e}")
+            await interaction.edit_original_response(
+                content="❌ Erreur en récupérant les épisodes. Réessaie plus tard.", embed=None, view=None
+            )
+            return
+
+        if not episodes:
+            await interaction.edit_original_response(
+                content=f"❌ Aucun épisode trouvé pour la saison {season.get('season_number', '?')}.",
+                embed=None, view=None,
+            )
+            return
+
+        embed = discord.Embed(
+            title=f"{self.show_title} — Saison {season.get('season_number', '?')}",
+            description="Choisis l'épisode :",
+            color=discord.Color.blurple(),
+        )
+        view = EpisodeSelectView(episodes, self.show_title, season.get("season_number", "?"))
+        await interaction.edit_original_response(embed=embed, view=view)
+
+
+class SeasonSelectView(discord.ui.View):
+    def __init__(self, seasons: list, show_title: str):
+        super().__init__(timeout=180)
+        self.add_item(SeasonSelect(seasons, show_title))
+
+
+# --- Étape 2 : sélection du bon titre parmi les résultats de recherche ---
+class TitleSelect(discord.ui.Select):
+    def __init__(self, items: list):
+        self.items = items
+        options = []
+        for item in items:
+            year = item.get("original_release_year", "????")
+            kind = "Série" if item.get("object_type") == "show" else "Film"
+            label = f"{item.get('title', 'Sans titre')} ({year}) — {kind}"[:100]
+            options.append(discord.SelectOption(label=label, value=str(item["id"])))
+        super().__init__(placeholder="Choisis le bon titre...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        item_id = int(self.values[0])
+        item = next((i for i in self.items if i["id"] == item_id), None)
+        if item is None:
+            await interaction.response.edit_message(content="❌ Titre introuvable.", embed=None, view=None)
+            return
+
+        is_show = item.get("object_type") == "show"
+        content_type = "show" if is_show else "movie"
+        title = item.get("title", "Sans titre")
+
+        await interaction.response.defer(ephemeral=True)
+        try:
+            details = await asyncio.get_event_loop().run_in_executor(
+                None, justwatch_helper.get_title_details, item_id, content_type
+            )
+        except Exception as e:
+            print(f"Erreur récupération des détails JustWatch : {e}")
+            await interaction.edit_original_response(
+                content="❌ Erreur en récupérant les détails de ce titre. Réessaie plus tard.",
+                embed=None, view=None,
+            )
+            return
+
+        if is_show:
+            seasons = details.get("seasons", [])
+            if not seasons:
+                await interaction.edit_original_response(
+                    content=f"❌ Aucune saison trouvée pour **{title}**.", embed=None, view=None
+                )
+                return
+            embed = discord.Embed(
+                title=title,
+                description="Choisis la saison :",
+                color=discord.Color.blurple(),
+            )
+            view = SeasonSelectView(seasons, title)
+            await interaction.edit_original_response(embed=embed, view=view)
+        else:
+            platforms = justwatch_helper.offers_to_platform_list(details.get("offers", []))
+            embed = discord.Embed(
+                title=title,
+                description=item.get("short_description", ""),
+                color=discord.Color.blurple(),
+            )
+            view = discord.ui.View(timeout=180)
+            if not platforms:
+                embed.add_field(name="Disponibilité", value="Aucune plateforme trouvée pour ce film en France.")
+            else:
+                for label, url in platforms[:25]:
+                    view.add_item(discord.ui.Button(label=f"▶️ {label}", style=discord.ButtonStyle.link, url=url))
+            await interaction.edit_original_response(embed=embed, view=view)
+
+
+class TitleSelectView(discord.ui.View):
+    def __init__(self, items: list):
+        super().__init__(timeout=180)
+        self.add_item(TitleSelect(items))
+
+
 # --- Modal (formulaire) de recherche ---
-class SearchModal(discord.ui.Modal, title="Recherche dans le catalogue"):
+class SearchModal(discord.ui.Modal, title="Recherche d'un film ou d'une série"):
     keyword = discord.ui.TextInput(
-        label="Titre ou genre à rechercher",
-        placeholder="Ex: Inception, Science-fiction...",
+        label="Titre à rechercher",
+        placeholder="Ex: Inception, Stranger Things...",
         required=True,
         max_length=100,
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        results = search_catalog(str(self.keyword))
+        await interaction.response.defer(ephemeral=True)
+        try:
+            items = await asyncio.get_event_loop().run_in_executor(
+                None, justwatch_helper.search, str(self.keyword)
+            )
+        except Exception as e:
+            print(f"Erreur recherche JustWatch : {e}")
+            await interaction.followup.send(
+                "❌ Erreur pendant la recherche. Réessaie plus tard.", ephemeral=True
+            )
+            return
 
-        if not results:
-            await interaction.response.send_message(
+        if not items:
+            await interaction.followup.send(
                 f"❌ Aucun résultat pour **{self.keyword}**.", ephemeral=True
             )
             return
 
         embed = discord.Embed(
             title=f"🔍 Résultats pour « {self.keyword} »",
+            description="Sélectionne le bon titre dans la liste ci-dessous :",
             color=discord.Color.blurple(),
         )
-        view = discord.ui.View(timeout=None)
+        view = TitleSelectView(items)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
-        # Discord limite à 25 composants par message (5 lignes x 5) :
-        # on limite donc le nombre de boutons affichés au besoin.
-        MAX_BUTTONS = 25
-        buttons_added = 0
-
-        for item in results:
-            embed.add_field(
-                name=f"{item['titre']} ({item.get('annee', '????')}) — {item.get('type', 'N/A')}",
-                value=f"*{item.get('genre', 'N/A')}*\n{item.get('description', '')}",
-                inline=False,
-            )
-
-            lien = item.get("lien", "").strip()
-            if lien and buttons_added < MAX_BUTTONS:
-                # Bouton "lien" : Discord ouvre directement l'URL, pas besoin
-                # de gérer le clic côté bot.
-                label = item["titre"]
-                if len(label) > 75:  # limite Discord (80 caractères) avec marge
-                    label = label[:72] + "..."
-                view.add_item(
-                    discord.ui.Button(
-                        label=f"▶️ {label}",
-                        style=discord.ButtonStyle.link,
-                        url=lien,
-                    )
-                )
-                buttons_added += 1
-
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
 # --- Vue persistante du panel ---
@@ -147,6 +304,15 @@ async def on_ready():
     # Ré-enregistre la vue persistante à chaque redémarrage du bot,
     # sinon le bouton cesse de répondre après un restart.
     bot.add_view(PanelView())
+
+    # Initialise le client JustWatch (appels réseau bloquants -> executor)
+    try:
+        await asyncio.get_event_loop().run_in_executor(None, justwatch_helper.init_justwatch)
+        await asyncio.get_event_loop().run_in_executor(None, justwatch_helper.load_providers)
+        print("Client JustWatch initialisé.")
+    except Exception as e:
+        print(f"Erreur d'initialisation de JustWatch : {e}")
+
     try:
         synced = await bot.tree.sync()
         print(f"{len(synced)} commande(s) slash synchronisée(s).")
@@ -156,6 +322,16 @@ async def on_ready():
 
 
 REQUIRED_ROLE = "staff"  # nom exact du rôle autorisé à utiliser /panel
+
+
+def only_in_cmds_channel():
+    async def predicate(interaction: discord.Interaction):
+        channel = interaction.channel
+        if channel is None or getattr(channel, "name", "").lower() != "cmds":
+            raise app_commands.CheckFailure("Cette commande doit être utilisée dans le salon #cmds.")
+        return True
+
+    return app_commands.check(predicate)
 
 
 @bot.tree.command(name="panel", description="Affiche le panel du catalogue films/séries")
@@ -183,8 +359,9 @@ async def panel_error(interaction: discord.Interaction, error: app_commands.AppC
         )
 
 
-@bot.tree.command(name="stats", description="Affiche le nombre de films et de séries dans le catalogue")
-async def stats(interaction: discord.Interaction):
+@bot.tree.command(name="cinestats", description="Affiche le nombre de films et de séries dans le catalogue")
+@only_in_cmds_channel()
+async def cinestats(interaction: discord.Interaction):
     catalog = load_catalog()
     nb_films = sum(1 for item in catalog if item.get("type") == "Film")
     nb_series = sum(1 for item in catalog if item.get("type") == "Série")
@@ -201,6 +378,18 @@ async def stats(interaction: discord.Interaction):
         embed.set_footer(text=f"{nb_autres} entrée(s) sans type reconnu (ni 'Film' ni 'Série')")
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@cinestats.error
+async def cinestats_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.CheckFailure):
+        await interaction.response.send_message(
+            "⚠️ Cette commande ne peut être utilisée que dans le salon #cmds.",
+            ephemeral=True,
+        )
+    else:
+        print(f"Erreur /cinestats : {error}")
+        await interaction.response.send_message("Une erreur est survenue.", ephemeral=True)
 
 
 if __name__ == "__main__":
