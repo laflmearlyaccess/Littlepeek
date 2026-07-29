@@ -158,16 +158,6 @@ async def on_ready():
 REQUIRED_ROLE = "staff"  # nom exact du rôle autorisé à utiliser /panel
 
 
-def only_in_cmds_channel():
-    async def predicate(interaction: discord.Interaction):
-        channel = interaction.channel
-        if channel is None or getattr(channel, "name", "").lower() != "cmds":
-            raise app_commands.CheckFailure("Cette commande doit être utilisée dans le salon #cmds.")
-        return True
-
-    return app_commands.check(predicate)
-
-
 @bot.tree.command(name="panel", description="Affiche le panel du catalogue films/séries")
 @app_commands.checks.has_role(REQUIRED_ROLE)
 async def panel(interaction: discord.Interaction):
@@ -193,9 +183,8 @@ async def panel_error(interaction: discord.Interaction, error: app_commands.AppC
         )
 
 
-@bot.tree.command(name="cinestats", description="Affiche le nombre de films et de séries dans le catalogue")
-@only_in_cmds_channel()
-async def cinestats(interaction: discord.Interaction):
+@bot.tree.command(name="stats", description="Affiche le nombre de films et de séries dans le catalogue")
+async def stats(interaction: discord.Interaction):
     catalog = load_catalog()
     nb_films = sum(1 for item in catalog if item.get("type") == "Film")
     nb_series = sum(1 for item in catalog if item.get("type") == "Série")
@@ -212,18 +201,6 @@ async def cinestats(interaction: discord.Interaction):
         embed.set_footer(text=f"{nb_autres} entrée(s) sans type reconnu (ni 'Film' ni 'Série')")
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
-
-
-@cinestats.error
-async def cinestats_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    if isinstance(error, app_commands.CheckFailure):
-        await interaction.response.send_message(
-            "⚠️ Cette commande ne peut être utilisée que dans le salon #cmds.",
-            ephemeral=True,
-        )
-    else:
-        print(f"Erreur /cinestats : {error}")
-        await interaction.response.send_message("Une erreur est survenue.", ephemeral=True)
 
 
 if __name__ == "__main__":
