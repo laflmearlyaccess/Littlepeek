@@ -209,6 +209,56 @@ async def panel_error(interaction: discord.Interaction, error: app_commands.AppC
         )
 
 
+# Chaque règle : (émoji, titre FR, texte FR, texte EN en gris atténué via "-# ")
+SERVER_RULES = [
+    ("🔞", "Pas de contenu NSFW", "Aucun contenu à caractère explicite ou choquant n'est toléré.",
+     "No NSFW content of any kind is tolerated."),
+    ("🤝", "Respectez-vous les uns les autres", "Aucune insulte, harcèlement ou comportement toxique envers les autres membres.",
+     "No insults, harassment, or toxic behavior towards other members."),
+    ("📢", "Pas de promotion ni de publicité", "Merci de ne pas faire la promotion d'autres serveurs, produits ou services sans autorisation.",
+     "Please do not advertise other servers, products, or services without permission."),
+    ("💰", "Pas de vente ni de transaction", "Aucune vente, achat ou échange de biens/services n'est autorisé sur ce serveur.",
+     "No selling, buying, or trading of goods/services is allowed on this server."),
+    ("🚫", "Pas de spam", "Évitez les messages répétitifs, les mentions abusives et le flood dans les salons.",
+     "Avoid repetitive messages, excessive mentions, and channel flooding."),
+    ("🎯", "Restez dans le sujet du salon", "Utilisez chaque salon pour ce à quoi il est destiné.",
+     "Use each channel for its intended purpose."),
+    ("👮", "Respectez les décisions du staff", "Les modérateurs veillent au bon fonctionnement du serveur ; leurs décisions doivent être respectées.",
+     "Moderators keep the server running smoothly; their decisions must be respected."),
+    ("⚖️", "Pas de contenu illégal", "Tout contenu enfreignant la loi est strictement interdit.",
+     "Any content violating the law is strictly forbidden."),
+]
+
+
+@bot.tree.command(name="rules", description="Affiche le règlement du serveur")
+@app_commands.checks.has_role(REQUIRED_ROLE)
+async def rules(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="📜 Règlement du serveur",
+        description="Merci de respecter les règles suivantes pour garder une communauté saine.",
+        color=discord.Color.blurple(),
+    )
+    for emoji, titre, texte_fr, texte_en in SERVER_RULES:
+        embed.add_field(
+            name=f"{emoji} {titre}",
+            value=f"{texte_fr}\n-# {texte_en}",
+            inline=False,
+        )
+    await interaction.response.send_message(embed=embed, ephemeral=False)
+
+
+@rules.error
+async def rules_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.MissingRole):
+        await interaction.response.send_message(
+            f"❌ Tu dois avoir le rôle **{REQUIRED_ROLE}** pour utiliser cette commande.",
+            ephemeral=True,
+        )
+    else:
+        print(f"Erreur /rules : {error}")
+        await interaction.response.send_message("Une erreur est survenue.", ephemeral=True)
+
+
 # --- Commande NON-STAFF : restreinte au salon "cmds" ---
 @bot.tree.command(name="stats", description="Affiche le nombre de films et de séries dans le catalogue")
 @in_member_commands_channel()
@@ -244,7 +294,7 @@ async def stats_error(interaction: discord.Interaction, error: app_commands.AppC
 
 # Liste des noms de commandes réservées au staff, à exclure de /phelp.
 # Ajoute le nom ici à chaque nouvelle commande staff que tu crées.
-STAFF_COMMANDS = {"panel"}
+STAFF_COMMANDS = {"panel", "rules"}
 COMMANDS_PER_PAGE = 5
 
 
