@@ -17,6 +17,24 @@ CATALOG_FILE = "catalog.json"
 MAX_RESULTS = 10
 FUZZY_THRESHOLD = 0.75  # 0 = tout accepté, 1 = correspondance exacte uniquement
 
+MEMBER_COMMANDS_CHANNEL = "cmds"  # nom exact du salon où les commandes non-staff sont autorisées
+
+
+def in_member_commands_channel():
+    """
+    Vérification à appliquer sur les commandes NON-staff (ex: /stats) :
+    elles ne peuvent être utilisées que dans le salon MEMBER_COMMANDS_CHANNEL.
+    Ne pas appliquer sur les commandes staff (ex: /panel).
+
+    Si la commande est utilisée ailleurs, on ne répond volontairement rien :
+    Discord affichera son propre message "Cette interaction a échoué",
+    visible uniquement par la personne qui a tapé la commande, jamais par
+    les autres membres du salon. Aucun message du bot n'est envoyé.
+    """
+    async def predicate(interaction: discord.Interaction) -> bool:
+        return interaction.channel is not None and interaction.channel.name == MEMBER_COMMANDS_CHANNEL
+    return app_commands.check(predicate)
+
 
 def load_catalog():
     """Charge le catalogue depuis le fichier JSON."""
@@ -149,7 +167,14 @@ async def on_ready():
     bot.add_view(PanelView())
     try:
         synced = await bot.tree.sync()
-        print(f"{len(synced)} commande(s) slash synchronisée(s).")
+        print(f"{len(synced)} commande(s) slash synchronisée(s) globalement (jusqu'à 1h pour apparaître).")
+
+        # Sync supplémentaire par serveur : apparaît quasi instantanément,
+        # utile en développement pour ne pas attendre la propagation globale.
+        for guild in bot.guilds:
+            bot.tree.copy_global_to(guild=guild)
+            await bot.tree.sync(guild=guild)
+        print(f"Commandes synchronisées instantanément sur {len(bot.guilds)} serveur(s).")
     except Exception as e:
         print(f"Erreur de synchronisation des commandes : {e}")
     print(f"Connecté en tant que {bot.user} (ID: {bot.user.id})")
@@ -158,6 +183,7 @@ async def on_ready():
 REQUIRED_ROLE = "staff"  # nom exact du rôle autorisé à utiliser /panel
 
 
+# --- Commande STAFF : pas de restriction de salon, seulement le rôle ---
 @bot.tree.command(name="panel", description="Affiche le panel du catalogue films/séries")
 @app_commands.checks.has_role(REQUIRED_ROLE)
 async def panel(interaction: discord.Interaction):
@@ -183,7 +209,9 @@ async def panel_error(interaction: discord.Interaction, error: app_commands.AppC
         )
 
 
+# --- Commande NON-STAFF : restreinte au salon "cmds" ---
 @bot.tree.command(name="stats", description="Affiche le nombre de films et de séries dans le catalogue")
+@in_member_commands_channel()
 async def stats(interaction: discord.Interaction):
     catalog = load_catalog()
     nb_films = sum(1 for item in catalog if item.get("type") == "Film")
@@ -200,7 +228,122 @@ async def stats(interaction: discord.Interaction):
     if nb_autres:
         embed.set_footer(text=f"{nb_autres} entrée(s) sans type reconnu (ni 'Film' ni 'Série')")
 
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    await interaction.response.send_message(embed=embed, ephemeral=False)
+
+
+@stats.error
+async def stats_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.CheckFailure):
+        # Volontairement silencieux : pas de message hors du salon #cmds.
+        # Discord affichera son propre message d'échec, visible seulement
+        # par la personne qui a tapé la commande.
+        print(f"/stats bloqué : utilisé hors de #{MEMBER_COMMANDS_CHANNEL} par {interaction.user}.")
+        return
+    print(f"Erreur /stats : {error}")
+
+
+# Liste des noms de commandes réservées au staff, à exclure de /phelp.
+# Ajoute le nom ici à chaque nouvelle commande staff que tu crées.
+STAFF_COMMANDS = {"panel"}
+COMMANDS_PER_PAGE = 5
+
+
+def build_phelp_embed(page_commands: list, page_num: int, total_pages: int) -> discord.Embed:
+    embed = discord.Embed(
+        title="📖 Commandes disponibles",
+        description=(
+            f"Toutes ces commandes ne fonctionnent que dans #{MEMBER_COMMANDS_CHANNEL}.\n"
+            f"Page {page_num}/{total_pages}"
+        ),
+        color=discord.Color.blurple(),
+    )
+    for cmd in page_commands:
+        embed.add_field(name=f"/{cmd.name}", value=cmd.description or "Pas de description.", inline=False)
+    return embed
+
+
+class PhelpNavButton(discord.ui.Button):
+    def __init__(self, label: str, target_page: int, parent_view: "PhelpView"):
+        super().__init__(label=label, style=discord.ButtonStyle.secondary)
+        self.target_page = target_page
+        self.parent_view = parent_view
+
+    async def callback(self, interaction: discord.Interaction):
+        self.parent_view.current = self.target_page
+        self.parent_view.refresh_buttons()
+        embed = build_phelp_embed(
+            self.parent_view.pages[self.parent_view.current],
+            self.parent_view.current + 1,
+            len(self.parent_view.pages),
+        )
+        await interaction.response.edit_message(embed=embed, view=self.parent_view)
+
+
+class PhelpView(discord.ui.View):
+    def __init__(self, pages: list):
+        super().__init__(timeout=120)
+        self.pages = pages
+        self.current = 0
+        self.refresh_buttons()
+
+    def refresh_buttons(self):
+        self.clear_items()
+        # Bouton "Précédent" uniquement s'il existe une page avant
+        if self.current > 0:
+            self.add_item(PhelpNavButton("◀️ Précédent", self.current - 1, self))
+        # Bouton "Suivant" uniquement s'il existe une page après
+        if self.current < len(self.pages) - 1:
+            self.add_item(PhelpNavButton("Suivant ▶️", self.current + 1, self))
+
+
+# --- Commande NON-STAFF : restreinte au salon "cmds" ---
+@bot.tree.command(name="phelp", description="Affiche la liste des commandes disponibles pour les membres")
+@in_member_commands_channel()
+async def phelp(interaction: discord.Interaction):
+    commands_list = [cmd for cmd in bot.tree.get_commands() if cmd.name not in STAFF_COMMANDS]
+    pages = [
+        commands_list[i:i + COMMANDS_PER_PAGE]
+        for i in range(0, len(commands_list), COMMANDS_PER_PAGE)
+    ] or [[]]
+
+    embed = build_phelp_embed(pages[0], 1, len(pages))
+    view = PhelpView(pages)
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
+@phelp.error
+async def phelp_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.CheckFailure):
+        print(f"/phelp bloqué : utilisé hors de #{MEMBER_COMMANDS_CHANNEL} par {interaction.user}.")
+        return
+    print(f"Erreur /phelp : {error}")
+
+
+# --- Commande NON-STAFF : restreinte au salon "cmds" ---
+@bot.tree.command(name="tag", description="Affiche ton tag mural (pseudo, avatar, date d'arrivée)")
+@in_member_commands_channel()
+async def tag(interaction: discord.Interaction):
+    member = interaction.user
+    embed = discord.Embed(
+        title=f"🏷️ Tag de {member.display_name}",
+        color=discord.Color.blurple(),
+    )
+    embed.set_thumbnail(url=member.display_avatar.url)
+    embed.add_field(name="Pseudo", value=member.display_name, inline=True)
+
+    joined_at = getattr(member, "joined_at", None)
+    joined_str = joined_at.strftime("%d/%m/%Y") if joined_at else "Inconnue"
+    embed.add_field(name="Arrivé le", value=joined_str, inline=True)
+
+    await interaction.response.send_message(embed=embed, ephemeral=False)
+
+
+@tag.error
+async def tag_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.CheckFailure):
+        print(f"/tag bloqué : utilisé hors de #{MEMBER_COMMANDS_CHANNEL} par {interaction.user}.")
+        return
+    print(f"Erreur /tag : {error}")
 
 
 if __name__ == "__main__":
