@@ -225,8 +225,6 @@ SERVER_RULES = [
      "Use each channel for its intended purpose."),
     ("👮", "Respectez les décisions du staff", "Les modérateurs veillent au bon fonctionnement du serveur ; leurs décisions doivent être respectées.",
      "Moderators keep the server running smoothly; their decisions must be respected."),
-    ("⚖️", "Pas de contenu illégal", "Tout contenu enfreignant la loi est strictement interdit.",
-     "Any content violating the law is strictly forbidden."),
 ]
 
 
