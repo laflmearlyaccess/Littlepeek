@@ -3,7 +3,6 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import os
-import json
 import difflib
 import re
 import unicodedata
@@ -67,7 +66,6 @@ load_dotenv()
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-CATALOG_FILE = "catalog.json"
 MAX_RESULTS = 10
 FUZZY_THRESHOLD = 0.75
 
@@ -78,13 +76,6 @@ def in_member_commands_channel():
     async def predicate(interaction: discord.Interaction) -> bool:
         return interaction.channel is not None and interaction.channel.name == MEMBER_COMMANDS_CHANNEL
     return app_commands.check(predicate)
-
-
-def load_catalog():
-    if not os.path.exists(CATALOG_FILE):
-        return []
-    with open(CATALOG_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
 
 
 def similarity(a: str, b: str) -> float:
@@ -322,24 +313,14 @@ async def rules_error(interaction: discord.Interaction, error: app_commands.AppC
         await interaction.response.send_message("Une erreur est survenue.", ephemeral=True)
 
 
-@bot.tree.command(name="stats", description="Affiche le nombre de films et de séries dans le catalogue")
+@bot.tree.command(name="stats", description="Affiche le statut du catalogue en ligne")
 @in_member_commands_channel()
 async def stats(interaction: discord.Interaction):
-    catalog = load_catalog()
-    nb_films = sum(1 for item in catalog if item.get("type") == "Film")
-    nb_series = sum(1 for item in catalog if item.get("type") == "Série")
-    nb_autres = len(catalog) - nb_films - nb_series
-
     embed = discord.Embed(
-        title="📊 Statistiques du catalogue",
+        title="📊 Statut du catalogue",
+        description="Le catalogue n'est plus alimenté par un fichier local. Les recherches utilisent désormais les résultats TMDB en temps réel.",
         color=discord.Color.blurple(),
     )
-    embed.add_field(name="🎬 Films", value=str(nb_films), inline=True)
-    embed.add_field(name="📺 Séries", value=str(nb_series), inline=True)
-    embed.add_field(name="📦 Total", value=str(len(catalog)), inline=True)
-    if nb_autres:
-        embed.set_footer(text=f"{nb_autres} entrée(s) sans type reconnu (ni 'Film' ni 'Série')")
-
     await interaction.response.send_message(embed=embed, ephemeral=False)
 
 
