@@ -1,7 +1,9 @@
+import os
 import unittest
 from unittest.mock import patch
 
 import bot
+import tmbd
 
 
 class SearchCatalogTests(unittest.TestCase):
@@ -44,6 +46,18 @@ class SearchCatalogTests(unittest.TestCase):
 
         self.assertEqual(mapped["id"], 1396)
         self.assertEqual(mapped["type"], "Série")
+
+    def test_search_tmdb_uses_tmdb_api_key_env_var(self):
+        with patch.dict(os.environ, {"TMDB_API_KEY": "test-api-key"}, clear=True):
+            with patch("tmbd.requests.get") as mock_get:
+                mock_get.return_value.status_code = 200
+                mock_get.return_value.json.return_value = {"results": [{"title": "Test"}]}
+
+                results = tmbd.search_tmdb("inception")
+
+        self.assertEqual(results, [{"title": "Test"}])
+        mock_get.assert_called_once()
+        self.assertEqual(mock_get.call_args.kwargs["params"]["api_key"], "test-api-key")
 
     def test_search_catalog_uses_tmdb_results(self):
         with patch("bot.search_tmdb") as mock_search_tmdb:

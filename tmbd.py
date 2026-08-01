@@ -4,7 +4,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-TMDB_API_KEY = os.getenv("TMDB_BEARER")
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 GENRE_IDS = {
     "action": 28,
@@ -21,19 +20,37 @@ GENRE_IDS = {
 }
 
 
+def _get_tmdb_auth():
+    for env_name in ("TMDB_BEARER", "TMDB_ACCESS_TOKEN", "TMDB_READ_ACCESS_TOKEN"):
+        value = os.getenv(env_name)
+        if value and str(value).strip():
+            token = str(value).strip()
+            if token.lower().startswith("bearer "):
+                token = token[7:].strip()
+            return "bearer", token
+
+    api_key = os.getenv("TMDB_API_KEY")
+    if api_key and str(api_key).strip():
+        return "api_key", str(api_key).strip()
+
+    return None, None
+
+
 def search_tmdb(query, language="fr-FR", genre=None, random_choice=False):
-    if not TMDB_API_KEY:
+    auth_type, auth_value = _get_tmdb_auth()
+    if not auth_type or not auth_value:
         return []
 
-    headers = {
-        "Authorization": f"Bearer {TMDB_API_KEY}",
-        "Content-Type": "application/json;charset=utf-8"
-    }
+    headers = {"Content-Type": "application/json;charset=utf-8"}
+    if auth_type == "bearer":
+        headers["Authorization"] = f"Bearer {auth_value}"
 
     try:
         if random_choice:
             url = f"{TMDB_BASE_URL}/trending/movie/week"
             params = {"language": language, "page": 1}
+            if auth_type == "api_key":
+                params["api_key"] = auth_value
             response = requests.get(url, headers=headers, params=params, timeout=10)
         elif genre and genre != "Tout":
             genre_key = " ".join(str(genre).lower().split())
@@ -47,6 +64,8 @@ def search_tmdb(query, language="fr-FR", genre=None, random_choice=False):
                     "include_adult": True,
                     "page": 1,
                 }
+                if auth_type == "api_key":
+                    params["api_key"] = auth_value
                 response = requests.get(url, headers=headers, params=params, timeout=10)
             else:
                 url = f"{TMDB_BASE_URL}/search/multi"
@@ -56,6 +75,8 @@ def search_tmdb(query, language="fr-FR", genre=None, random_choice=False):
                     "include_adult": True,
                     "page": 1,
                 }
+                if auth_type == "api_key":
+                    params["api_key"] = auth_value
                 response = requests.get(url, headers=headers, params=params, timeout=10)
         else:
             url = f"{TMDB_BASE_URL}/search/multi"
@@ -65,6 +86,8 @@ def search_tmdb(query, language="fr-FR", genre=None, random_choice=False):
                 "include_adult": True,
                 "page": 1,
             }
+            if auth_type == "api_key":
+                params["api_key"] = auth_value
             response = requests.get(url, headers=headers, params=params, timeout=10)
     except requests.RequestException:
         return []
