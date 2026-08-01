@@ -1,3 +1,4 @@
+import random
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -8,6 +9,58 @@ import re
 import unicodedata
 from dotenv import load_dotenv
 from keep_alive import keep_alive
+from tmbd import search_tmdb
+
+
+class SeasonEpisodeButton(discord.ui.Button):
+    def __init__(self, show_id: str, title: str):
+        label = title if len(title) <= 75 else title[:72] + "..."
+        super().__init__(label=f"🎬 {label}", style=discord.ButtonStyle.primary)
+        self.show_id = show_id
+        self.title = title
+
+    async def callback(self, interaction: discord.Interaction):
+        modal = EpisodeModal(self.show_id, self.title)
+        await interaction.response.send_modal(modal)
+
+
+class EpisodeModal(discord.ui.Modal, title="Choisir la saison et l’épisode"):
+    def __init__(self, show_id: str, title: str):
+        super().__init__(title="Choisir la saison et l’épisode")
+        self.show_id = show_id
+        self.title = title
+        self.season_input = discord.ui.TextInput(
+            label="Numéro de la saison",
+            placeholder="Ex: 1",
+            required=True,
+            max_length=3,
+        )
+        self.episode_input = discord.ui.TextInput(
+            label="Numéro de l’épisode",
+            placeholder="Ex: 1",
+            required=True,
+            max_length=3,
+        )
+        self.add_item(self.season_input)
+        self.add_item(self.episode_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        season = self.season_input.value.strip()
+        episode = self.episode_input.value.strip()
+        if not season.isdigit() or not episode.isdigit():
+            await interaction.response.send_message("⚠️ La saison et l’épisode doivent être des nombres.", ephemeral=True)
+            return
+
+        url = f"https://cinejoy.to/watch/tv/{self.show_id}/{season}/{episode}"
+        view = discord.ui.View(timeout=None)
+        view.add_item(
+            discord.ui.Button(
+                label="▶️ Ouvrir la série",
+                style=discord.ButtonStyle.link,
+                url=url,
+            )
+        )
+        await interaction.response.send_message("Accédez à l'épisode ici :", view=view, ephemeral=True)
 
 load_dotenv()
 
@@ -47,55 +100,86 @@ def normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def map_tmdb_result(item: dict):
+    title = item.get("title") or item.get("name") or ""
+    if not title:
+        return None
+
+    media_type = item.get("media_type")
+    if media_type == "movie":
+        item_type = "Film"
+    elif media_type == "tv":
+        item_type = "Série"
+    else:
+        item_type = "Autre"
+
+    release_date = item.get("release_date") or item.get("first_air_date") or ""
+    annee = int(release_date[:4]) if release_date and release_date[:4].isdigit() else None
+
+    tmdb_id = item.get("id")
+    if media_type == "movie" and tmdb_id:
+        link = f"https://cinejoy.to/watch/movie/{tmdb_id}"
+    elif media_type == "tv" and tmdb_id:
+        link = f"https://cinejoy.to/watch/show/{tmdb_id}"
+    else:
+        link = ""
+
+    return {
+        "titre": title,
+        "type": item_type,
+        "annee": annee,
+        "genre": "",
+        "description": item.get("overview", ""),
+        "lien": link,
+        "id": tmdb_id,
+    }
+
+
+def build_short_summary(text: str, max_length: int = 260) -> str:
+    if not text:
+        return "Résumé indisponible."
+
+    cleaned = " ".join(text.split())
+    if len(cleaned) <= max_length:
+        return cleaned
+
+    truncated = cleaned[:max_length].rsplit(" ", 1)[0]
+    return f"{truncated}…"
+
+
 def search_catalog(keyword: str):
     keyword = normalize_text(keyword)
-    catalog = load_catalog()
-    if not keyword or not catalog:
+    if not keyword:
         return []
 
-    exact_matches = [
-        item for item in catalog
-        if keyword in normalize_text(item.get("titre", ""))
-        or keyword in normalize_text(item.get("genre", ""))
-    ]
-    if exact_matches:
-        return exact_matches[:MAX_RESULTS]
-
-    keyword_words = keyword.split()
-    fuzzy_matches = []
-    for item in catalog:
-        titre_words = normalize_text(item.get("titre", "")).split()
-        per_word_scores = [
-            max([similarity(kw, tw) for tw in titre_words] or [0])
-            for kw in keyword_words
-        ]
-        if all(score >= FUZZY_THRESHOLD for score in per_word_scores):
-            avg_score = sum(per_word_scores) / len(per_word_scores)
-            fuzzy_matches.append((avg_score, item))
-
-    fuzzy_matches.sort(key=lambda x: x[0], reverse=True)
-    return [item for _, item in fuzzy_matches][:MAX_RESULTS]
+    tmdb_results = search_tmdb(keyword)
+    mapped_results = [result for result in (map_tmdb_result(item) for item in tmdb_results) if result]
+    return mapped_results[:MAX_RESULTS]
 
 
 class SearchModal(discord.ui.Modal, title="Recherche dans le catalogue"):
-    keyword = discord.ui.TextInput(
-        label="Titre ou genre à rechercher",
-        placeholder="Ex: Inception, Science-fiction...",
-        required=True,
-        max_length=100,
-    )
+    def __init__(self):
+        super().__init__(title="Recherche dans le catalogue")
+        self.keyword_input = discord.ui.TextInput(
+            label="Titre à rechercher",
+            placeholder="Ex: Inception, Breaking Bad...",
+            required=True,
+            max_length=100,
+        )
+        self.add_item(self.keyword_input)
 
     async def on_submit(self, interaction: discord.Interaction):
-        results = search_catalog(str(self.keyword))
+        keyword_value = self.keyword_input.value or ""
+        results = search_catalog(keyword_value)
 
         if not results:
             await interaction.response.send_message(
-                f"❌ Aucun résultat pour **{self.keyword}**.", ephemeral=True
+                f"❌ Aucun résultat pour **{keyword_value}**.", ephemeral=True
             )
             return
 
         embed = discord.Embed(
-            title=f"🔍 Résultats pour « {self.keyword} »",
+            title=f"🔍 Résultats pour « {keyword_value} »",
             color=discord.Color.blurple(),
         )
         view = discord.ui.View(timeout=None)
@@ -104,14 +188,20 @@ class SearchModal(discord.ui.Modal, title="Recherche dans le catalogue"):
         buttons_added = 0
 
         for item in results:
+            summary = build_short_summary(item.get("description", ""))
             embed.add_field(
                 name=f"{item['titre']} ({item.get('annee', '????')}) — {item.get('type', 'N/A')}",
-                value=f"*{item.get('genre', 'N/A')}*\n{item.get('description', '')}",
+                value=summary,
                 inline=False,
             )
 
             lien = item.get("lien", "").strip()
-            if lien and buttons_added < MAX_BUTTONS:
+            if item.get("type") == "Série" and item.get("lien"):
+                view.add_item(
+                    SeasonEpisodeButton(item.get("id", ""), item["titre"])
+                )
+                buttons_added += 1
+            elif lien and buttons_added < MAX_BUTTONS:
                 label = item["titre"]
                 if len(label) > 75:
                     label = label[:72] + "..."
