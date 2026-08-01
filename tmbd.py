@@ -1,8 +1,11 @@
+import logging
 import os
 import requests
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 GENRE_IDS = {
@@ -39,6 +42,7 @@ def _get_tmdb_auth():
 def search_tmdb(query, language="fr-FR", genre=None, random_choice=False):
     auth_type, auth_value = _get_tmdb_auth()
     if not auth_type or not auth_value:
+        logger.error("TMDB credentials missing. Set TMDB_BEARER, TMDB_ACCESS_TOKEN, TMDB_READ_ACCESS_TOKEN or TMDB_API_KEY in the environment.")
         return []
 
     headers = {"Content-Type": "application/json;charset=utf-8"}
@@ -89,10 +93,18 @@ def search_tmdb(query, language="fr-FR", genre=None, random_choice=False):
             if auth_type == "api_key":
                 params["api_key"] = auth_value
             response = requests.get(url, headers=headers, params=params, timeout=10)
-    except requests.RequestException:
+    except requests.RequestException as exc:
+        logger.exception("TMDB request failed: %s", exc)
         return []
 
     if response.status_code != 200:
+        logger.error("TMDB request failed with status %s: %s", response.status_code, response.text[:400])
         return []
 
-    return response.json().get("results", [])[:5]
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        logger.exception("TMDB returned invalid JSON: %s", exc)
+        return []
+
+    return payload.get("results", [])[:5]
