@@ -39,7 +39,7 @@ def _get_tmdb_auth():
     return None, None
 
 
-def search_tmdb(query, language="fr-FR", genre=None, random_choice=False):
+def search_tmdb(query, language="en-US", genre=None, random_choice=False):
     auth_type, auth_value = _get_tmdb_auth()
     if not auth_type or not auth_value:
         logger.error("TMDB credentials missing. Set TMDB_BEARER, TMDB_ACCESS_TOKEN, TMDB_READ_ACCESS_TOKEN or TMDB_API_KEY in the environment.")
